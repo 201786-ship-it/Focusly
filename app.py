@@ -760,9 +760,9 @@ def page_start():
         st.caption("Just your name, class and school.")
 
         with st.form("start_form"):
-            name = st.text_input("Your name", placeholder="Naisha Garg")
-            class_name = st.text_input("Class", placeholder="8-J")
-            school = st.text_input("School", placeholder="Bal Bharati Public School")
+            name = st.text_input("Your name")
+            class_name = st.text_input("Class")
+            school = st.text_input("School")
             started = st.form_submit_button("Start", use_container_width=True)
 
         if started:
