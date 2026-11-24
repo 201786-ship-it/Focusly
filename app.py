@@ -14,6 +14,9 @@ public demo never breaks in front of judges.
 
 import hashlib
 import hmac
+import random
+import smtplib
+import ssl
 import json
 import os
 import re
@@ -262,6 +265,114 @@ def create_user(name, email, password="", role="student"):
         return False, "That email is already registered. Try logging in."
     finally:
         conn.close()
+
+
+EMAIL_PATTERN = re.compile(r"^[A-Za-z0-9._%+\-]+@[A-Za-z0-9\-]+(\.[A-Za-z0-9\-]+)*\.[A-Za-z]{2,}$")
+
+
+def valid_email(email):
+    """Strict shape check: rejects 'abc@def', 'a b@c.com', 'x@y.z', trailing dots."""
+    email = (email or "").strip()
+    if len(email) > 254 or not EMAIL_PATTERN.match(email):
+        return False
+    local, domain = email.rsplit("@", 1)
+    if local.startswith(".") or local.endswith(".") or ".." in local:
+        return False
+    if domain.startswith("-") or domain.endswith("-") or ".." in domain:
+        return False
+    return True
+
+
+OTP_TTL_SECONDS = 600  # a code is good for ten minutes
+
+
+def smtp_settings():
+    """Mail settings from Streamlit secrets or the environment. None if unset."""
+    def read(name):
+        value = None
+        try:
+            value = st.secrets.get(name)
+        except Exception:
+            value = None
+        return value or os.getenv(name)
+
+    host, user, password = read("SMTP_HOST"), read("SMTP_USER"), read("SMTP_PASSWORD")
+    if not (host and user and password):
+        return None
+    return {
+        "host": host,
+        "port": int(read("SMTP_PORT") or 587),
+        "user": user,
+        "password": password,
+        "from": read("SMTP_FROM") or user,
+    }
+
+
+def mail_configured():
+    return smtp_settings() is not None
+
+
+def send_code(to_email, code):
+    """Email the one-time code. Raises if mail is not configured or fails."""
+    config = smtp_settings()
+    if config is None:
+        raise RuntimeError("Email sending is not configured")
+    body = (
+        "Subject: Your FOCUSLY code\r\n"
+        f"From: {config['from']}\r\n"
+        f"To: {to_email}\r\n"
+        "Content-Type: text/plain; charset=utf-8\r\n\r\n"
+        f"Your FOCUSLY code is {code}\r\n\r\n"
+        "Enter it in the app to continue. It expires in 10 minutes.\r\n"
+        "If you did not ask for this, ignore this email.\r\n"
+    )
+    with smtplib.SMTP(config["host"], config["port"], timeout=20) as server:
+        server.starttls(context=ssl.create_default_context())
+        server.login(config["user"], config["password"])
+        server.sendmail(config["from"], [to_email], body)
+
+
+def issue_code(email):
+    """Create a code for this email, try to mail it, and remember it in the session."""
+    code = f"{random.randint(0, 999999):06d}"
+    sent = False
+    if mail_configured():
+        try:
+            send_code(email, code)
+            sent = True
+        except Exception:  # noqa: BLE001
+            sent = False
+    st.session_state["otp"] = {
+        "email": email.strip().lower(),
+        "code": code,
+        "expires": time.time() + OTP_TTL_SECONDS,
+        "sent": sent,
+    }
+    return sent
+
+
+def code_is_valid(email, typed):
+    record = st.session_state.get("otp") or {}
+    if not record:
+        return False
+    if record.get("email") != (email or "").strip().lower():
+        return False
+    if time.time() > record.get("expires", 0):
+        return False
+    return (typed or "").strip() == record.get("code")
+
+
+def clear_code():
+    st.session_state.pop("otp", None)
+
+
+def find_user_by_email(email):
+    conn = get_connection()
+    row = conn.execute(
+        "SELECT * FROM users WHERE email = ?", ((email or "").strip().lower(),)
+    ).fetchone()
+    conn.close()
+    return dict(row) if row else None
 
 
 def email_exists(email):
@@ -785,98 +896,135 @@ def require_login():
 def page_login():
     hero("FOCUSLY", "Earn your screen time. Build your future.")
 
-    left, mid, right = st.columns([1, 1.7, 1])
+    left, mid, right = st.columns([1, 1.8, 1])
     with mid:
-        step = st.session_state.get("signup_step")
+        step = st.session_state.get("auth_step", "start")
+        email = st.session_state.get("auth_email", "")
 
-        # ---------- step 2: choose a password ----------
-        if step == "password":
-            pending = st.session_state.get("pending_signup", {})
+        # ---------- step 4: returning student, confirm the password ----------
+        if step == "password_login":
+            st.subheader("Enter your password")
+            st.caption(f"Code verified for {email}")
+            with st.form("password_login_form"):
+                password = st.text_input("Password", type="password")
+                entered = st.form_submit_button("Log in", use_container_width=True)
+
+            if entered:
+                user = find_user(email, password)
+                if user:
+                    st.session_state["user"] = user
+                    for key in ("auth_step", "auth_email"):
+                        st.session_state.pop(key, None)
+                    clear_code()
+                    st.success(f"Welcome back, {user['name']}.")
+                    st.rerun()
+                else:
+                    st.error("That password is wrong. Try again.")
+
+            if st.button("Start again", use_container_width=True):
+                for key in ("auth_step", "auth_email"):
+                    st.session_state.pop(key, None)
+                clear_code()
+                st.rerun()
+            return
+
+        # ---------- step 3: new student, choose a name and a password ----------
+        if step == "details":
             st.subheader("Create a password")
-            st.caption(f"For {pending.get('email', '')}")
-
-            with st.form("password_form"):
-                password = st.text_input("Password", type="password",
+            st.caption(f"Code verified for {email}")
+            with st.form("details_form"):
+                name = st.text_input("Your name")
+                password = st.text_input("Choose a password", type="password",
                                          help="At least 8 characters.")
                 confirm = st.text_input("Repeat the password", type="password")
-                saved = st.form_submit_button("Create password", use_container_width=True)
+                role = st.selectbox("I am a", ["student", "teacher"])
+                created = st.form_submit_button("Create account", use_container_width=True)
 
-            if saved:
-                if len(password) < 8:
+            if created:
+                if len(name.strip()) < 2:
+                    st.error("Please enter your name.")
+                elif len(password) < 8:
                     st.error("Use at least 8 characters.")
                 elif password != confirm:
                     st.error("The two passwords do not match.")
                 else:
-                    ok, message = create_user(
-                        pending["name"], pending["email"], password, pending["role"]
-                    )
+                    ok, message = create_user(name, email, password, role)
                     if ok:
-                        st.session_state["user"] = find_user(pending["email"], password)
-                        st.session_state.pop("signup_step", None)
-                        st.session_state.pop("pending_signup", None)
+                        st.session_state["user"] = find_user(email, password)
+                        for key in ("auth_step", "auth_email"):
+                            st.session_state.pop(key, None)
+                        clear_code()
                         st.success(message)
                         st.rerun()
                     else:
                         st.error(message)
 
             if st.button("Start again", use_container_width=True):
-                st.session_state.pop("signup_step", None)
-                st.session_state.pop("pending_signup", None)
+                for key in ("auth_step", "auth_email"):
+                    st.session_state.pop(key, None)
+                clear_code()
                 st.rerun()
             return
 
-        # ---------- step 1: name and email ----------
-        if step == "details":
-            st.subheader("Create an account")
-            with st.form("signup_form"):
-                name = st.text_input("Your name")
-                email = st.text_input("Email", placeholder="you@example.com")
-                role = st.selectbox("I am a", ["student", "teacher"])
-                next_step = st.form_submit_button("Create account", use_container_width=True)
+        # ---------- step 2: type the code that was emailed ----------
+        if step == "code":
+            record = st.session_state.get("otp") or {}
+            st.subheader("Enter your code")
+            st.caption(f"A 6-digit code was sent to {email}.")
+            if not record.get("sent"):
+                st.warning("Email sending is not set up yet, so the code is shown here:")
+                st.info(f"Your code: **{record.get('code', '')}**")
 
-            if next_step:
-                if len(name.strip()) < 2:
-                    st.error("Please enter your name.")
-                elif "@" not in email or "." not in email.split("@")[-1]:
-                    st.error("Please enter an email address, like name@example.com.")
+            with st.form("code_form"):
+                typed = st.text_input("6-digit code", max_chars=6)
+                checked = st.form_submit_button("Verify code", use_container_width=True)
+
+            if checked:
+                if not code_is_valid(email, typed):
+                    st.error("That code is wrong or has expired. Send a new one.")
+                elif email_exists(email):
+                    st.session_state["auth_step"] = "password_login"
+                    st.rerun()
                 else:
-                    if email_exists(email):
-                        st.error("That email already has an account. Go back and log in.")
-                    else:
-                        st.session_state["pending_signup"] = {
-                            "name": name.strip(),
-                            "email": email.strip().lower(),
-                            "role": role,
-                        }
-                        st.session_state["signup_step"] = "password"
-                        st.rerun()
+                    st.session_state["auth_step"] = "details"
+                    st.rerun()
 
-            if st.button("Back to log in", use_container_width=True):
-                st.session_state.pop("signup_step", None)
+            c1, c2 = st.columns(2)
+            if c1.button("Send a new code", use_container_width=True):
+                issue_code(email)
+                st.rerun()
+            if c2.button("Use a different email", use_container_width=True):
+                for key in ("auth_step", "auth_email"):
+                    st.session_state.pop(key, None)
+                clear_code()
                 st.rerun()
             return
 
-        # ---------- log in ----------
-        st.subheader("Log in")
-        with st.form("login_form"):
-            email = st.text_input("Email", placeholder="you@example.com")
-            password = st.text_input("Password", type="password")
-            submitted = st.form_submit_button("Log in", use_container_width=True)
+        # ---------- step 1: email only ----------
+        st.subheader("Log in or sign up")
+        st.caption(
+            "Enter your email. We send a code to it, and you set your FOCUSLY password "
+            "after the code is verified — nothing to remember beforehand."
+        )
+        with st.form("email_form"):
+            typed_email = st.text_input("Email", placeholder="you@example.com")
+            started = st.form_submit_button("Send me a code", use_container_width=True)
 
-        if submitted:
-            user = find_user(email, password)
-            if user:
-                st.session_state["user"] = user
-                st.success(f"Welcome back, {user['name']}.")
-                st.rerun()
+        if started:
+            if not valid_email(typed_email):
+                st.error("That does not look like a real email address. Use the form name@example.com.")
             else:
-                st.error("No account matches that email and password.")
+                issue_code(typed_email)
+                st.session_state["auth_email"] = typed_email.strip().lower()
+                st.session_state["auth_step"] = "code"
+                st.rerun()
 
         st.write("")
-        st.caption("New here?")
-        if st.button("Create an account", type="primary", use_container_width=True):
-            st.session_state["signup_step"] = "details"
-            st.rerun()
+        st.caption(
+            "Use an email you can actually open — the code goes to that inbox."
+            if mail_configured()
+            else "This demo is not sending email yet, so the code is shown on the next screen."
+        )
 
 
 def page_dashboard(user):
@@ -1322,8 +1470,9 @@ with st.sidebar:
             st.session_state.pop("user", None)
             st.session_state.pop("plan", None)
             st.session_state.pop("chat", None)
-            st.session_state.pop("signup_step", None)
-            st.session_state.pop("pending_signup", None)
+            st.session_state.pop("auth_step", None)
+            st.session_state.pop("auth_email", None)
+            st.session_state.pop("otp", None)
             st.rerun()
 
     st.divider()
