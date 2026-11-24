@@ -36,15 +36,19 @@ st.markdown(
         padding-right: clamp(0.75rem, 3vw, 2.5rem);
         max-width: 1200px;
     }
+    /* cards follow the app theme, so they stay readable in light and dark mode */
     div[data-testid="stMetric"] {
-        background: #ffffff;
-        border: 1px solid #e3e8e8;
+        background-color: var(--secondary-background-color);
+        border: 1px solid rgba(128, 128, 128, 0.35);
         border-radius: 14px;
         padding: 14px 16px;
     }
     div[data-testid="stMetricLabel"] p {
         font-size: 0.82rem;
-        color: #4b5563;
+        opacity: 0.9;
+    }
+    div[data-testid="stMetricValue"] {
+        color: inherit;
     }
     .focusly-hero {
         background: linear-gradient(135deg, #0f766e 0%, #115e59 100%);
@@ -63,15 +67,15 @@ st.markdown(
         font-size: 0.92rem;
     }
     .focusly-card {
-        background: #ffffff;
-        border: 1px solid #e3e8e8;
+        background-color: var(--secondary-background-color);
+        border: 1px solid rgba(128, 128, 128, 0.35);
         border-radius: 14px;
         padding: 16px 18px;
         margin-bottom: 12px;
     }
     .focusly-note {
         font-size: 0.82rem;
-        color: #4b5563;
+        opacity: 0.85;
     }
     </style>
     """,
