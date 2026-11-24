@@ -10,7 +10,7 @@ homework into earned entertainment minutes.
 
 ```
 app.py            the whole app
-requirements.txt  three packages
+requirements.txt  the packages it needs
 README.md         this page
 ```
 
@@ -23,21 +23,34 @@ streamlit run app.py
 
 It opens at http://localhost:8501.
 
-Demo logins (password **focusly123**):
-
-* `201786@pp.balbharati.org` — student, with two graded submissions and a week of usage data
-* `teacher@pp.balbharati.org` — teacher, can see flagged work and override scores
+There are no demo accounts to remember. Click **Create an account**, enter a name and any
+email address, and you are in. The email does not have to be a school address, and nothing
+is verified or sent to it.
 
 ## Put it online (public link, free)
 
 1. Create a GitHub account and a new **public** repository called `focusly`.
-2. Click **uploading an existing file** and drag in `app.py`, `requirements.txt`, `README.md`.
+2. Click **uploading an existing file** and drag in `app.py` and `requirements.txt`
+   (the README too, if you want the repo to look complete).
 3. Commit.
 4. Go to https://share.streamlit.io, sign in with GitHub, click **New app**.
 5. Pick your repository, branch `main`, main file path `app.py`, then **Deploy**.
 6. Wait two minutes. You get a public URL like `https://focusly-xxxx.streamlit.app`.
 
 Anyone — judges, teachers, your teammates — can open that link from a phone.
+
+## Accounts and passwords
+
+Signing up asks for a name and an email. The password field is **optional**:
+
+* **With a password** — the account is protected. Logging in needs both email and password.
+* **Without a password** — the account opens with the email alone. Quick for a demo, but
+  anyone who types that email gets in.
+
+Because of that, be straight with yourself about what this is: a prototype for showing how
+FOCUSLY works, not a place to keep real students' homework. Before a pilot with real
+children you need proper accounts — verified emails, real passwords, and a privacy note for
+parents.
 
 ## Turn on the real AI (Sarvam AI)
 
@@ -63,10 +76,10 @@ can read it.
 
 | Feature | State |
 |---|---|
-| Login, study plan, homework checking, rewards, insights | Working |
+| Sign up, log in, study plan, homework checking, rewards | Working, stored in a real database |
 | Study planning with Sarvam AI | Working when a key is added; built-in planner otherwise |
 | Homework photo | Uploaded and quality-checked (blur, brightness, resolution); handwriting is **not** read without a vision model |
-| Screen time | Sample data in this demo; the Android build reads real data from `UsageStatsManager` |
+| Screen time | Sample week loaded by a button on the Insights page, or numbers you type in. Real per-app data needs the Android build (`UsageStatsManager`) |
 | App blocking | **Not implemented.** Blocking needs Android Accessibility/Device Admin permissions and Play Store approval |
 | Database | SQLite. On Streamlit Cloud the file resets when the app reboots, so it is fine for a demo, not for a pilot |
 
