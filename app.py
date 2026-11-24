@@ -264,6 +264,15 @@ def create_user(name, email, password="", role="student"):
         conn.close()
 
 
+def email_exists(email):
+    conn = get_connection()
+    row = conn.execute(
+        "SELECT 1 FROM users WHERE email = ?", (email.strip().lower(),)
+    ).fetchone()
+    conn.close()
+    return row is not None
+
+
 def find_user(email, password=""):
     """Accounts created without a password log in with the email only."""
     conn = get_connection()
@@ -778,49 +787,80 @@ def page_login():
 
     left, mid, right = st.columns([1, 1.7, 1])
     with mid:
-        if st.session_state.get("show_signup"):
-            st.subheader("Create an account")
-            with st.form("signup_form"):
-                name = st.text_input("Your name")
-                email = st.text_input("Email", placeholder="you@example.com")
-                password = st.text_input(
-                    "Password (optional)",
-                    type="password",
-                    help="Leave it blank if you would rather log in with just your email.",
-                )
-                role = st.selectbox("I am a", ["student", "teacher"])
-                created = st.form_submit_button("Create account", use_container_width=True)
+        step = st.session_state.get("signup_step")
 
-            if created:
-                if len(name.strip()) < 2:
-                    st.error("Please enter your name.")
-                elif "@" not in email or "." not in email.split("@")[-1]:
-                    st.error("Please enter an email address, like name@example.com.")
-                elif password and len(password) < 8:
-                    st.error("If you set a password, make it at least 8 characters.")
+        # ---------- step 2: choose a password ----------
+        if step == "password":
+            pending = st.session_state.get("pending_signup", {})
+            st.subheader("Create a password")
+            st.caption(f"For {pending.get('email', '')}")
+
+            with st.form("password_form"):
+                password = st.text_input("Password", type="password",
+                                         help="At least 8 characters.")
+                confirm = st.text_input("Repeat the password", type="password")
+                saved = st.form_submit_button("Create password", use_container_width=True)
+
+            if saved:
+                if len(password) < 8:
+                    st.error("Use at least 8 characters.")
+                elif password != confirm:
+                    st.error("The two passwords do not match.")
                 else:
-                    ok, message = create_user(name, email, password, role)
+                    ok, message = create_user(
+                        pending["name"], pending["email"], password, pending["role"]
+                    )
                     if ok:
-                        st.session_state["user"] = find_user(email, password)
-                        st.session_state.pop("show_signup", None)
+                        st.session_state["user"] = find_user(pending["email"], password)
+                        st.session_state.pop("signup_step", None)
+                        st.session_state.pop("pending_signup", None)
                         st.success(message)
                         st.rerun()
                     else:
                         st.error(message)
 
-            if st.button("Back to log in", use_container_width=True):
-                st.session_state.pop("show_signup", None)
+            if st.button("Start again", use_container_width=True):
+                st.session_state.pop("signup_step", None)
+                st.session_state.pop("pending_signup", None)
                 st.rerun()
             return
 
+        # ---------- step 1: name and email ----------
+        if step == "details":
+            st.subheader("Create an account")
+            with st.form("signup_form"):
+                name = st.text_input("Your name")
+                email = st.text_input("Email", placeholder="you@example.com")
+                role = st.selectbox("I am a", ["student", "teacher"])
+                next_step = st.form_submit_button("Create account", use_container_width=True)
+
+            if next_step:
+                if len(name.strip()) < 2:
+                    st.error("Please enter your name.")
+                elif "@" not in email or "." not in email.split("@")[-1]:
+                    st.error("Please enter an email address, like name@example.com.")
+                else:
+                    if email_exists(email):
+                        st.error("That email already has an account. Go back and log in.")
+                    else:
+                        st.session_state["pending_signup"] = {
+                            "name": name.strip(),
+                            "email": email.strip().lower(),
+                            "role": role,
+                        }
+                        st.session_state["signup_step"] = "password"
+                        st.rerun()
+
+            if st.button("Back to log in", use_container_width=True):
+                st.session_state.pop("signup_step", None)
+                st.rerun()
+            return
+
+        # ---------- log in ----------
         st.subheader("Log in")
         with st.form("login_form"):
             email = st.text_input("Email", placeholder="you@example.com")
-            password = st.text_input(
-                "Password",
-                type="password",
-                help="Leave blank if your account has no password.",
-            )
+            password = st.text_input("Password", type="password")
             submitted = st.form_submit_button("Log in", use_container_width=True)
 
         if submitted:
@@ -835,7 +875,7 @@ def page_login():
         st.write("")
         st.caption("New here?")
         if st.button("Create an account", type="primary", use_container_width=True):
-            st.session_state["show_signup"] = True
+            st.session_state["signup_step"] = "details"
             st.rerun()
 
 
@@ -1282,6 +1322,8 @@ with st.sidebar:
             st.session_state.pop("user", None)
             st.session_state.pop("plan", None)
             st.session_state.pop("chat", None)
+            st.session_state.pop("signup_step", None)
+            st.session_state.pop("pending_signup", None)
             st.rerun()
 
     st.divider()
