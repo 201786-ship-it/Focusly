@@ -23,9 +23,8 @@ streamlit run app.py
 
 It opens at http://localhost:8501.
 
-There are no demo accounts to remember. Click **Create an account**, enter a name and any
-email address, then choose a password on the next screen, and you are in. The email does
-not have to be a school address, and nothing is verified or sent to it.
+There are no demo accounts to remember. Type any email, take the code, then choose your
+FOCUSLY password — and you are in.
 
 ## Put it online (public link, free)
 
@@ -39,23 +38,50 @@ not have to be a school address, and nothing is verified or sent to it.
 
 Anyone — judges, teachers, your teammates — can open that link from a phone.
 
-## Accounts and passwords
+## How signing in works
 
-Signing up happens in two steps:
+**First time — three steps**
 
-1. **Create an account** — your name, your email (any address works), and whether you are a
-   student or a teacher.
-2. **Create a password** — choose one of at least 8 characters and type it twice. When you
-   click **Create password**, the account exists and you are logged in.
+1. Type your email. A 6-digit code is sent to that inbox.
+2. Type the code. It is good for ten minutes.
+3. Choose your FOCUSLY password (at least 8 characters, typed twice), add your name, and the
+   account is created and you are logged in.
 
-After that, logging in needs the email and the password together. Passwords are stored
-hashed (PBKDF2 with a salt), never as plain text, so nobody can read them out of the
-database.
+**Every time after that — three steps**
 
-Two limits worth knowing: the email is not verified, so an address that does not exist will
-still work; and there is no "forgot password" yet. For a demo that is fine. Before a pilot
-with real students you would add email verification, password reset, and a privacy note for
-parents.
+1. Type your email.
+2. Type the new code sent to that inbox.
+3. Type your FOCUSLY password.
+
+The code proves the email is really yours; the password is the one you made for FOCUSLY, not
+your Gmail password. Both are needed, which is why a stolen password alone is not enough.
+
+Passwords are stored hashed (PBKDF2 with a salt), never as plain text, so nobody can read
+them out of the database — not even you.
+
+### Sending the code
+
+The code has to reach a real inbox, which means the app needs a mail account to send from.
+Add these in Streamlit → **Settings → Secrets**:
+
+```toml
+SMTP_HOST = "smtp.gmail.com"
+SMTP_PORT = 587
+SMTP_USER = "your.address@gmail.com"
+SMTP_PASSWORD = "your-16-character-app-password"
+SMTP_FROM = "your.address@gmail.com"
+```
+
+For Gmail, create an **App Password** (Google Account → Security → 2-Step Verification → App
+passwords). Your normal Gmail password will not work. Any provider's SMTP works — use its
+host and port.
+
+**Without those settings** the app still works for a demo: it shows the code on screen
+instead of emailing it, and says so plainly. That is honest for a school demo, but it is not
+real verification — with the code visible on screen, anyone can sign in with any address.
+
+Two things still missing: there is no "forgot password", and nothing limits how many codes
+one person can request. Both matter before real students use it.
 
 ## Turn on the real AI (Sarvam AI)
 
