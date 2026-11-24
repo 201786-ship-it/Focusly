@@ -1,16 +1,14 @@
-"""
-FOCUSLY - Earn Your Screen Time. Build Your Future.
-
-A single-file Streamlit app for the SEVA FIRST Innovation Challenge 2026
-(School & Vocational). AI study planning with Sarvam AI, AI homework
-verification, earned screen time, and focus insights.
-
-Run locally:      streamlit run app.py
-Deploy publicly:  push this file to GitHub, then streamlit.io/cloud -> New app
-
-Everything works without an API key (a rule-based planner takes over), so a
-public demo never breaks in front of judges.
-"""
+# FOCUSLY - Earn Your Screen Time. Build Your Future.
+#
+# A single-file Streamlit app for the SEVA FIRST Innovation Challenge 2026
+# (School & Vocational). AI study planning with Sarvam AI, AI homework
+# verification, earned screen time, and focus insights.
+#
+# Run locally:      streamlit run app.py
+# Deploy publicly:  push this file to GitHub, then streamlit.io/cloud -> New app
+#
+# Everything works without an API key (a rule-based planner takes over), so a
+# public demo never breaks in front of judges.
 
 import json
 import os
