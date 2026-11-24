@@ -24,8 +24,8 @@ streamlit run app.py
 It opens at http://localhost:8501.
 
 There are no demo accounts to remember. Click **Create an account**, enter a name and any
-email address, and you are in. The email does not have to be a school address, and nothing
-is verified or sent to it.
+email address, then choose a password on the next screen, and you are in. The email does
+not have to be a school address, and nothing is verified or sent to it.
 
 ## Put it online (public link, free)
 
@@ -41,15 +41,20 @@ Anyone — judges, teachers, your teammates — can open that link from a phone.
 
 ## Accounts and passwords
 
-Signing up asks for a name and an email. The password field is **optional**:
+Signing up happens in two steps:
 
-* **With a password** — the account is protected. Logging in needs both email and password.
-* **Without a password** — the account opens with the email alone. Quick for a demo, but
-  anyone who types that email gets in.
+1. **Create an account** — your name, your email (any address works), and whether you are a
+   student or a teacher.
+2. **Create a password** — choose one of at least 8 characters and type it twice. When you
+   click **Create password**, the account exists and you are logged in.
 
-Because of that, be straight with yourself about what this is: a prototype for showing how
-FOCUSLY works, not a place to keep real students' homework. Before a pilot with real
-children you need proper accounts — verified emails, real passwords, and a privacy note for
+After that, logging in needs the email and the password together. Passwords are stored
+hashed (PBKDF2 with a salt), never as plain text, so nobody can read them out of the
+database.
+
+Two limits worth knowing: the email is not verified, so an address that does not exist will
+still work; and there is no "forgot password" yet. For a demo that is fine. Before a pilot
+with real students you would add email verification, password reset, and a privacy note for
 parents.
 
 ## Turn on the real AI (Sarvam AI)
