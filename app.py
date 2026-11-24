@@ -247,12 +247,14 @@ def verify_password(password, stored):
     return hmac.compare_digest(hash_password(password, salt), stored)
 
 
-def create_user(name, email, password, role="student"):
+def create_user(name, email, password="", role="student"):
+    """Password is optional: with none, the account logs in on email alone."""
     conn = get_connection()
     try:
         conn.execute(
             "INSERT INTO users (name, email, password, role, created_at) VALUES (?, ?, ?, ?, ?)",
-            (name.strip(), email.strip().lower(), hash_password(password), role, now_str()),
+            (name.strip(), email.strip().lower(),
+             hash_password(password) if password else "", role, now_str()),
         )
         conn.commit()
         return True, "Account created."
@@ -262,96 +264,45 @@ def create_user(name, email, password, role="student"):
         conn.close()
 
 
-def find_user(email, password):
+def find_user(email, password=""):
+    """Accounts created without a password log in with the email only."""
     conn = get_connection()
     row = conn.execute(
         "SELECT * FROM users WHERE email = ?", (email.strip().lower(),)
     ).fetchone()
     conn.close()
-    if row and verify_password(password, row["password"]):
+    if row is None:
+        return None
+    stored = row["password"] or ""
+    if stored == "":
+        return dict(row)
+    if verify_password(password, row["password"]):
         return dict(row)
     return None
 
 
-def seed_demo_users():
-    """Create the demo accounts once, so the public app is never empty."""
+SAMPLE_USAGE = {
+    "Instagram": [95, 120, 75, 140, 110, 88, 130],
+    "YouTube": [45, 60, 30, 55, 70, 40, 65],
+    "Google Classroom": [25, 30, 20, 35, 28, 22, 30],
+    "WhatsApp": [35, 40, 50, 30, 45, 55, 38],
+    "Khan Academy": [20, 15, 25, 10, 18, 12, 22],
+}
+
+
+def load_sample_usage(user_id):
+    """Fill a week of example screen time for this user, so the charts have data."""
     conn = get_connection()
-    count = conn.execute("SELECT COUNT(*) AS c FROM users").fetchone()["c"]
-    conn.close()
-    if count:
-        return
-    demo = [
-        ("Naisha Garg", "201786@pp.balbharati.org", "student"),
-        ("Madhav Rathee", "222407@pp.balbharati.org", "student"),
-        ("Shanaya Kataria", "217253@pp.balbharati.org", "student"),
-        ("Teacher", "teacher@pp.balbharati.org", "teacher"),
-    ]
-    for name, email, role in demo:
-        create_user(name, email, "focusly123", role)
-    seed_demo_work()
-
-
-def seed_demo_work():
-    """Two graded submissions plus a week of usage, so charts and balances are real."""
-    conn = get_connection()
-    student = conn.execute(
-        "SELECT * FROM users WHERE email = ?", ("201786@pp.balbharati.org",)
-    ).fetchone()
-    if student is None:
-        conn.close()
-        return
-
-    samples = [
-        (
-            "Maths",
-            "Solve 15 + 27 and show your steps",
-            "First I added the ones digits: 5 + 7 = 12. That is one ten and two ones, so I wrote 2 "
-            "in the ones place and carried 1 to the tens. Then I added the tens: 1 + 2 + 1 = 4. "
-            "So the answer is 42. Check: 42 - 27 = 15, which matches the first number.",
-        ),
-        (
-            "Science",
-            "Explain photosynthesis",
-            "Photosynthesis is how green plants make their own food. The leaves take in carbon "
-            "dioxide from the air and water from the soil. Chlorophyll, the green pigment, absorbs "
-            "sunlight. Using that light energy the plant turns carbon dioxide and water into "
-            "glucose and releases oxygen as a waste product.",
-        ),
-    ]
-
-    for subject, question, answer in samples:
-        result = verify_answer(question, answer)
-        conn.execute(
-            "INSERT INTO submissions (user_id, subject, question, answer, score, max_score, "
-            "feedback, needs_review, photo_note, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
-            (
-                student["id"], subject, question, answer, result["score"], result["max_score"],
-                json.dumps(result["feedback"]), int(result["needs_review"]), "",
-                now_str(),
-            ),
-        )
-        submission_id = conn.execute("SELECT last_insert_rowid() AS id").fetchone()["id"]
-        minutes = BASE_MINUTES + round(result["ratio"] * SCORE_MINUTES)
-        conn.execute(
-            "INSERT INTO rewards (user_id, submission_id, minutes, reason, created_at) "
-            "VALUES (?, ?, ?, ?, ?)",
-            (student["id"], submission_id, minutes,
-             f"{subject} homework verified ({result['ratio']:.0%})", now_str()),
-        )
-
-    demo_usage = {
-        "Instagram": [95, 120, 75, 140, 110, 88, 130],
-        "YouTube": [45, 60, 30, 55, 70, 40, 65],
-        "Google Classroom": [25, 30, 20, 35, 28, 22, 30],
-        "WhatsApp": [35, 40, 50, 30, 45, 55, 38],
-        "Khan Academy": [20, 15, 25, 10, 18, 12, 22],
-    }
-    for app_name, minutes_by_day in demo_usage.items():
+    for app_name, minutes_by_day in SAMPLE_USAGE.items():
         for offset, minutes in enumerate(minutes_by_day):
             day = (date.today() - timedelta(days=6 - offset)).isoformat()
             conn.execute(
+                "DELETE FROM usage_records WHERE user_id = ? AND day = ? AND app_name = ?",
+                (user_id, day, app_name),
+            )
+            conn.execute(
                 "INSERT INTO usage_records (user_id, day, app_name, minutes) VALUES (?, ?, ?, ?)",
-                (student["id"], day, app_name, minutes),
+                (user_id, day, app_name, minutes),
             )
     conn.commit()
     conn.close()
@@ -825,14 +776,53 @@ def require_login():
 def page_login():
     hero("FOCUSLY", "Earn your screen time. Build your future.")
 
-    left, right = st.columns([1, 1], gap="large")
+    left, mid, right = st.columns([1, 1.7, 1])
+    with mid:
+        if st.session_state.get("show_signup"):
+            st.subheader("Create an account")
+            with st.form("signup_form"):
+                name = st.text_input("Your name")
+                email = st.text_input("Email", placeholder="you@example.com")
+                password = st.text_input(
+                    "Password (optional)",
+                    type="password",
+                    help="Leave it blank if you would rather log in with just your email.",
+                )
+                role = st.selectbox("I am a", ["student", "teacher"])
+                created = st.form_submit_button("Create account", use_container_width=True)
 
-    with left:
+            if created:
+                if len(name.strip()) < 2:
+                    st.error("Please enter your name.")
+                elif "@" not in email or "." not in email.split("@")[-1]:
+                    st.error("Please enter an email address, like name@example.com.")
+                elif password and len(password) < 8:
+                    st.error("If you set a password, make it at least 8 characters.")
+                else:
+                    ok, message = create_user(name, email, password, role)
+                    if ok:
+                        st.session_state["user"] = find_user(email, password)
+                        st.session_state.pop("show_signup", None)
+                        st.success(message)
+                        st.rerun()
+                    else:
+                        st.error(message)
+
+            if st.button("Back to log in", use_container_width=True):
+                st.session_state.pop("show_signup", None)
+                st.rerun()
+            return
+
         st.subheader("Log in")
         with st.form("login_form"):
-            email = st.text_input("School email", placeholder="201786@pp.balbharati.org")
-            password = st.text_input("Password", type="password", placeholder="focusly123")
+            email = st.text_input("Email", placeholder="you@example.com")
+            password = st.text_input(
+                "Password",
+                type="password",
+                help="Leave blank if your account has no password.",
+            )
             submitted = st.form_submit_button("Log in", use_container_width=True)
+
         if submitted:
             user = find_user(email, password)
             if user:
@@ -840,37 +830,13 @@ def page_login():
                 st.success(f"Welcome back, {user['name']}.")
                 st.rerun()
             else:
-                st.error("Wrong email or password.")
+                st.error("No account matches that email and password.")
 
-        note(
-            "Demo logins (password <b>focusly123</b>): "
-            "201786@pp.balbharati.org (student) · teacher@pp.balbharati.org (teacher)"
-        )
-
-    with right:
-        st.subheader("Create an account")
-        with st.form("signup_form"):
-            name = st.text_input("Your name")
-            new_email = st.text_input("School email ", placeholder="you@school.org")
-            new_password = st.text_input("Password ", type="password")
-            role = st.selectbox("I am a", ["student", "teacher"])
-            created = st.form_submit_button("Create account", use_container_width=True)
-        if created:
-            if len(name.strip()) < 2:
-                st.error("Please enter your name.")
-            elif "@" not in new_email:
-                st.error("Please enter a valid email.")
-            elif len(new_password) < 8:
-                st.error("Password must be at least 8 characters.")
-            else:
-                ok, message = create_user(name, new_email, new_password, role)
-                if ok:
-                    user = find_user(new_email, new_password)
-                    st.session_state["user"] = user
-                    st.success(message)
-                    st.rerun()
-                else:
-                    st.error(message)
+        st.write("")
+        st.caption("New here?")
+        if st.button("Create an account", type="primary", use_container_width=True):
+            st.session_state["show_signup"] = True
+            st.rerun()
 
 
 def page_dashboard(user):
@@ -1109,9 +1075,13 @@ def page_insights(user):
     hero("Focus intelligence", "Where your time actually goes, and what to do about it.")
 
     note(
-        "This demo uses sample usage data. In the Android build, this page reads real "
-        "per-app minutes from Android's UsageStatsManager (usage-access permission)."
+        "The numbers here come from what you enter, or from the sample week. In the Android "
+        "build this page reads real per-app minutes from Android's UsageStatsManager."
     )
+    if st.button("Load a sample week of usage"):
+        load_sample_usage(user["id"])
+        st.success("Sample week loaded.")
+        st.rerun()
     st.write("")
 
     with st.expander("Add or update a day's usage"):
@@ -1279,10 +1249,6 @@ can override it. The AI assists; the teacher decides. That is a design choice, n
     )
 
 
-# Everything is defined by now, so the demo data can be created safely.
-seed_demo_users()
-
-
 # ============================================================
 # NAVIGATION
 # ============================================================
@@ -1317,9 +1283,6 @@ with st.sidebar:
             st.session_state.pop("plan", None)
             st.session_state.pop("chat", None)
             st.rerun()
-    else:
-        st.divider()
-        st.caption("Demo password: focusly123")
 
     st.divider()
     st.caption("AI: " + ("Sarvam AI connected" if ai_ready() else "offline planner"))
@@ -1327,4 +1290,7 @@ with st.sidebar:
 if choice in ("Today", "Study coach", "Homework", "Rewards", "Insights", "Ask the coach"):
     require_login()
 
-PAGES[choice](user) if choice != "Log in" else PAGES[choice]()
+if choice == "Log in":
+    PAGES[choice]()
+else:
+    PAGES[choice](user)
