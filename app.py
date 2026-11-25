@@ -327,39 +327,66 @@ def allocate_blocks(weights, slots):
 
 
 def rule_plan(subjects, days, hours_per_day):
+    """Build the plan day by day.
+
+    Weights are recomputed for every day, and a subject drops out once its
+    deadline has passed, so the plan follows the work instead of repeating the
+    first day's split.
+    """
     daily_minutes = max(int(hours_per_day * 60), BLOCK_MINUTES)
     slots = max(daily_minutes // BLOCK_MINUTES, 1)
-    weights = []
-    for subject in subjects:
-        days_left = max(int(subject.get("days_left", days)), 1)
-        weights.append(float(subject.get("difficulty", 2)) / days_left)
-    allocation = allocate_blocks(weights, slots)
-    order = sorted(range(len(subjects)), key=lambda i: -weights[i])
 
     out_days = []
     for day_index in range(days):
+        active = []
+        for subject in subjects:
+            days_left = int(subject.get("days_left", days))
+            remaining = days_left - day_index
+            if remaining >= 1:
+                active.append((subject, float(subject.get("difficulty", 2)) / remaining))
+
+        everything_done = not active
+        if everything_done:
+            # every deadline has passed: keep a light revision block going
+            active = [(subject, 1.0) for subject in subjects]
+
+        weights = [weight for _, weight in active]
+        allocation = allocate_blocks(weights, slots)
+        order = sorted(range(len(active)), key=lambda i: -weights[i])
         rotated = order[day_index % len(order):] + order[: day_index % len(order)]
+
         clock = DAY_START
         blocks = []
         for index in rotated:
+            subject = active[index][0]
             for _ in range(allocation[index]):
                 blocks.append(
                     {
-                        "subject": subjects[index]["name"],
+                        "subject": subject["name"],
                         "minutes": BLOCK_MINUTES,
                         "start": f"{clock // 60:02d}:{clock % 60:02d}",
-                        "task": task_for(subjects[index], day_index, len(blocks)),
+                        "task": (
+                        f"Revise {subject['name']} at your own pace - nothing is due"
+                        if everything_done
+                        else task_for(subject, day_index, len(blocks))
+                    ),
                     }
                 )
                 clock += BLOCK_MINUTES + BREAK_MINUTES
+
         out_days.append(
             {
                 "day": day_index + 1,
                 "date": (date.today() + timedelta(days=day_index)).isoformat(),
-                "focus": focus_for(subjects, day_index),
+                "focus": (
+                    "All deadlines done - light revision"
+                    if everything_done and day_index != days - 1
+                    else focus_for(blocks, day_index, days, active)
+                ),
                 "blocks": blocks,
             }
         )
+
     return {
         "days": out_days,
         "tips": [
@@ -381,13 +408,21 @@ def task_for(subject, day_index, block_index):
     return f"{name}: one focused block of practice or reading"
 
 
-def focus_for(subjects, day_index):
-    ordered = sorted(subjects, key=lambda s: (int(s.get("days_left", 99)), -float(s.get("difficulty", 2))))
-    if day_index == 0:
-        return f"Clear the nearest deadline: {ordered[0]['name']}"
-    if day_index == len(ordered):
+def focus_for(blocks, day_index, total_days, active):
+    """One honest label per day, based on what that day's blocks actually are."""
+    if day_index == total_days - 1:
         return "Revision and catch-up day"
-    return f"{ordered[min(day_index, len(ordered) - 1)]['name']} in focus"
+    if not blocks:
+        return "Free day"
+    minutes_by_subject = {}
+    for block in blocks:
+        minutes_by_subject[block["subject"]] = (
+            minutes_by_subject.get(block["subject"], 0) + block["minutes"]
+        )
+    leader = max(minutes_by_subject, key=minutes_by_subject.get)
+    if len(minutes_by_subject) == 1:
+        return f"{leader} day"
+    return f"{leader} first, then the rest"
 
 
 def build_plan(subjects, days, hours_per_day):
