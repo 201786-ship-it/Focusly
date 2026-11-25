@@ -788,17 +788,33 @@ def page_dashboard(user):
 
     balance = balance_minutes(user["id"])
     earned = lifetime_minutes(user["id"])
+    spent = max(earned - balance, 0)
     streak = streak_days(user["id"])
     level = earned // LEVEL_STEP + 1
     to_next = LEVEL_STEP - (earned % LEVEL_STEP)
 
-    c1, c2, c3, c4 = st.columns(4)
-    c1.metric("Minutes to spend", balance)
-    c2.metric("Earned all time", earned)
-    c3.metric("Level", level, help=f"{to_next} minutes to level {level + 1}")
-    c4.metric("Day streak", streak)
+    c1, c2, c3 = st.columns(3)
+    c1.metric(
+        "Time left", balance,
+        help="Minutes you can still unlock. Homework adds to this; opening entertainment "
+             "takes from it. It never goes below zero.",
+    )
+    c2.metric(
+        "Level", level,
+        help=f"Every 100 minutes earned is one level. You need {to_next} more to reach "
+             f"level {level + 1}.",
+    )
+    c3.metric(
+        "Day streak", streak,
+        help="Days in a row you submitted homework, counting back from today. "
+             "Miss a day and it starts again from 1.",
+    )
 
-    st.progress(min(1.0, (earned % LEVEL_STEP) / LEVEL_STEP), text=f"{to_next} minutes to level {level + 1}")
+    st.progress(
+        min(1.0, (earned % LEVEL_STEP) / LEVEL_STEP),
+        text=f"{earned} minutes earned in total · {spent} spent · {to_next} more to reach "
+             f"level {level + 1}",
+    )
 
     st.divider()
     left, right = st.columns([1.2, 1], gap="large")
@@ -979,6 +995,7 @@ def page_rewards(user):
 
     balance = balance_minutes(user["id"])
     earned = lifetime_minutes(user["id"])
+    spent = max(earned - balance, 0)
     streak = streak_days(user["id"])
 
     c1, c2, c3 = st.columns(3)
